@@ -1,45 +1,40 @@
-// Settings
-static const uint16_t timer_divider = 80;
-static const uint64_t timer_max_count = 1000000;
+#define LED_BUILTIN 2   // Onboard LED pin (GPIO2)
 
-// Pins (change this if your Arduino board does not have LED_BUILTIN defined)
-static const int led_pin = LED_BUILTIN;
+hw_timer_t *timer = NULL;
+volatile bool toggleFlag = false;   // ISR -> main loop communication
 
-// Globals
-static hw_timer_t *timer = NULL;
-
-//*****************************************************************************
-// Interrupt Service Routines (ISRs)
-
-// This function executes when timer reaches max (and resets)
+// ISR (must be very short)
 void IRAM_ATTR onTimer() {
+  static bool led_state = false;
+  led_state = !led_state;
+  digitalWrite(LED_BUILTIN, led_state);
 
-  // Toggle LED
-  int pin_state = digitalRead(led_pin);
-  digitalWrite(led_pin, !pin_state);
+  toggleFlag = true;   // set flag for loop()
 }
 
-//*****************************************************************************
-// Main (runs as its own task with priority 1 on core 1)
-
 void setup() {
+  Serial.begin(115200);
+  delay(1000);
+  Serial.println("ESP32 Timer Interrupt Example Started");
 
-  // Configure LED pin
-  pinMode(led_pin, OUTPUT);
+  pinMode(LED_BUILTIN, OUTPUT);
 
-  // Create and start timer (num, divider, countUp)
-  timer = timerBegin(0, timer_divider, true);
+  // Initialize timer at 1 MHz (tick = 1 µs)
+  timer = timerBegin(1000000);
 
-  // Provide ISR to timer (timer, function, edge)
-  timerAttachInterrupt(timer, &onTimer, true);
+  // Attach ISR
+  timerAttachInterrupt(timer, &onTimer);
 
-  // At what count should ISR trigger (timer, count, autoreload)
-  timerAlarmWrite(timer, timer_max_count, true);
-
-  // Allow ISR to trigger
-  timerAlarmEnable(timer);
+  // Set alarm: 500000 µs = 0.5s, autoreload
+  timerAlarm(timer, 500000, true, 0);
 }
 
 void loop() {
-  // Do nothing
+  if (toggleFlag) {
+    toggleFlag = false;   // clear flag
+
+    static int count = 0;
+    Serial.print("Timer interrupt count: ");
+    Serial.println(++count);
+  }
 }
